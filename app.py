@@ -1,121 +1,184 @@
 import streamlit as st
-import requests
+import pandas as pd
+import datetime
 
-st.set_page_config(page_title="足球竞猜混合过关", page_icon="⚽")
-st.title("⚽ 足球混合过关计算器 (完全体)")
-st.write("数据来源：实时抓取全网最新赔率 🕵️‍♀️")
+# ================= 1. 系统与状态初始化 =================
+st.set_page_config(page_title="一线蛛网 - 高阶推演矩阵", page_icon="🕸️", layout="wide")
+
+if 'balance' not in st.session_state:
+    st.session_state.balance = 10000
+if 'bet_history' not in st.session_state:
+    st.session_state.bet_history = []
+if 'bet_slip' not in st.session_state:
+    st.session_state.bet_slip = []
+
+# ================= 2. 核心赛事数据库 (扩充版) =================
+# 内置了丰富的模拟真实赛事和完整赔率体系
+matches = {
+    "ENG_01": {
+        "name": "🏴󠁧󠁢󠁥󠁮󠁧󠁿 曼彻斯特城 VS 阿森纳",
+        "markets": {
+            "胜平负": {"主胜": 1.85, "平局": 3.60, "客胜": 4.20},
+            "总进球": {"0-1球": 4.50, "2-3球": 2.10, "4球+": 2.40},
+            "比分": {"1:0": 8.00, "2:1": 7.50, "1:1": 7.00, "0:1": 12.00, "2:2": 15.00},
+            "半全场": {"胜胜": 2.80, "平胜": 4.50, "平平": 5.50, "负负": 6.50}
+        }
+    },
+    "ENG_02": {
+        "name": "🏴󠁧󠁢󠁥󠁮󠁧󠁿 利物浦 VS 曼彻斯特联",
+        "markets": {
+            "胜平负": {"主胜": 1.65, "平局": 4.20, "客胜": 4.80},
+            "总进球": {"0-1球": 5.00, "2-3球": 2.05, "4球+": 2.15},
+            "比分": {"2:0": 8.50, "3:1": 11.00, "1:1": 8.50, "1:2": 15.00},
+            "半全场": {"胜胜": 2.40, "平胜": 4.80, "负负": 8.00}
+        }
+    },
+    "SPA_01": {
+        "name": "🇪🇸 皇家马德里 VS 巴塞罗那",
+        "markets": {
+            "胜平负": {"主胜": 2.25, "平局": 3.50, "客胜": 2.90},
+            "总进球": {"0-1球": 4.20, "2-3球": 2.00, "4球+": 2.50},
+            "比分": {"2:1": 8.50, "1:1": 6.50, "1:2": 10.00, "2:2": 11.00},
+            "半全场": {"胜胜": 3.50, "平胜": 5.50, "平负": 6.50, "负负": 4.50}
+        }
+    },
+    "SPA_02": {
+        "name": "🇪🇸 马德里竞技 VS 塞维利亚",
+        "markets": {
+            "胜平负": {"主胜": 1.55, "平局": 3.80, "客胜": 6.50},
+            "总进球": {"0-1球": 2.80, "2-3球": 1.95, "4球+": 3.50},
+            "比分": {"1:0": 6.00, "2:0": 6.50, "0:0": 9.00, "0:1": 15.00},
+            "半全场": {"胜胜": 2.30, "平胜": 4.20, "平平": 5.50}
+        }
+    },
+    "ITA_01": {
+        "name": "🇮🇹 国际米兰 VS 尤文图斯",
+        "markets": {
+            "胜平负": {"主胜": 2.10, "平局": 3.20, "客胜": 3.60},
+            "总进球": {"0-1球": 2.90, "2-3球": 1.95, "4球+": 3.80},
+            "比分": {"1:0": 6.50, "1:1": 6.00, "0:0": 8.00, "0:1": 9.50},
+            "半全场": {"胜胜": 3.40, "平胜": 5.00, "平平": 4.50, "负负": 6.00}
+        }
+    },
+    "ITA_02": {
+        "name": "🇮🇹 AC米兰 VS 那不勒斯",
+        "markets": {
+            "胜平负": {"主胜": 2.50, "平局": 3.30, "客胜": 2.75},
+            "总进球": {"0-1球": 3.40, "2-3球": 1.95, "4球+": 3.10},
+            "比分": {"1:1": 6.00, "2:1": 9.00, "1:2": 9.50},
+            "半全场": {"胜胜": 4.00, "平平": 5.00, "负负": 4.50}
+        }
+    },
+    "GER_01": {
+        "name": "🇩🇪 拜仁慕尼黑 VS 多特蒙德",
+        "markets": {
+            "胜平负": {"主胜": 1.45, "平局": 5.00, "客胜": 6.00},
+            "总进球": {"0-1球": 6.50, "2-3球": 2.30, "4球+": 1.70},
+            "比分": {"3:1": 9.50, "2:0": 8.50, "2:2": 13.00, "1:2": 18.00},
+            "半全场": {"胜胜": 2.00, "平胜": 4.50, "负胜": 18.00}
+        }
+    },
+    "FRA_01": {
+        "name": "🇫🇷 巴黎圣日耳曼 VS 马赛",
+        "markets": {
+            "胜平负": {"主胜": 1.35, "平局": 5.50, "客胜": 7.50},
+            "总进球": {"0-1球": 6.00, "2-3球": 2.20, "4球+": 1.80},
+            "比分": {"2:0": 7.50, "3:0": 9.00, "1:1": 11.00},
+            "半全场": {"胜胜": 1.85, "平胜": 4.20, "平平": 8.50}
+        }
+    }
+}
+
+# ================= 3. 主界面：前端控制台 =================
+st.markdown("<h1 style='text-align: center; color: #00FF41;'>🕸️「一线蛛网」全维推演终端 V3.0</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #A9A9A9;'>已接入全球超算赛事节点 | 支持多维盘口 | 深度串关逻辑</p>", unsafe_allow_html=True)
 st.divider()
 
-# ==========================================
-# 🌟 1. 抓取与清洗核心 (加入了总进球数 ttg)
-# ==========================================
-url = "https://webapi.sporttery.cn/gateway/uniform/football/getMatchCalculatorV1.qry?channel=c&poolCode=hhad,had"
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+col_main, col_sidebar = st.columns([7, 3])
 
-try:
-    response = requests.get(url, headers=headers, timeout=10)
-    data = response.json()
-    match_list = data.get('value', {}).get('matchInfoList', [])
-except:
-    match_list = []
-
-formatted_matches = []
-for m in match_list:
-    # 提取胜平负
-    odds_had = m.get('had', {})
-    odds_hhad = m.get('hhad', {})
-    win_odd = odds_had.get('h', odds_hhad.get('h', '0'))
-    draw_odd = odds_had.get('d', odds_hhad.get('d', '0'))
-    lose_odd = odds_had.get('a', odds_hhad.get('a', '0'))
+with col_main:
+    st.subheader("📡 全球实时信号源")
     
-    # 🌟 刀妹魔法：提取总进球数 (ttg) 赔率
-    odds_ttg = m.get('ttg', {})
-    goals_dict = {}
-    for i in range(8): # 0到7+球
-        key = f"s{i}"
-        label = f"{i}球" if i < 7 else "7+球"
-        goals_dict[label] = float(odds_ttg.get(key, '0'))
+    for match_id, match_data in matches.items():
+        with st.expander(f"🔥 {match_data['name']}", expanded=False): # 默认折叠，节省空间
+            tabs = st.tabs(list(match_data["markets"].keys()))
+            
+            for i, market_name in enumerate(match_data["markets"].keys()):
+                with tabs[i]:
+                    options = match_data["markets"][market_name]
+                    cols = st.columns(len(options))
+                    for col, (option_name, odds) in zip(cols, options.items()):
+                        if col.button(f"{option_name}\n\n@{odds}", key=f"{match_id}_{market_name}_{option_name}", use_container_width=True):
+                            slip_item = {
+                                "match_id": match_id,
+                                "match_name": match_data['name'],
+                                "market": market_name,
+                                "option": option_name,
+                                "odds": odds
+                            }
+                            if slip_item not in st.session_state.bet_slip:
+                                st.session_state.bet_slip.append(slip_item)
+                                st.rerun()
 
-    # 只有当胜平负和进球数全部没开盘时，才判定为彻底死盘丢弃
-    if win_odd == '0' and draw_odd == '0' and odds_ttg.get('s0', '0') == '0':
-        continue
+with col_sidebar:
+    st.markdown("### 🛒 战术推演池")
+    st.metric("💼 剩余蛛网币", st.session_state.balance)
+    
+    if not st.session_state.bet_slip:
+        st.info("尚未锁定目标。请从左侧信号源提取数据。")
+    else:
+        for idx, item in enumerate(st.session_state.bet_slip):
+            st.markdown(f"**{item['match_name']}**")
+            st.caption(f"{item['market']} - {item['option']} (@{item['odds']})")
+            if st.button("❌ 移除", key=f"remove_{idx}"):
+                st.session_state.bet_slip.pop(idx)
+                st.rerun()
+            st.divider()
+
+        slip_len = len(st.session_state.bet_slip)
+        unique_matches = len(set([item['match_id'] for item in st.session_state.bet_slip]))
         
-    formatted_matches.append({
-        "id": m.get('matchNumStr', '未知'),
-        "league": m.get('leagueName', '未知赛事'),
-        "home": m.get('homeTeamAllName', '主队'),
-        "away": m.get('awayTeamAllName', '客队'),
-        "win": float(win_odd) if win_odd else 0.0,
-        "draw": float(draw_odd) if draw_odd else 0.0,
-        "lose": float(lose_odd) if lose_odd else 0.0,
-        "goals": goals_dict
-    })
-
-# ==========================================
-# 🌟 2. 界面展示 (Tabs 多玩法)
-# ==========================================
-selected_odds = {}
-st.subheader(f"📋 今日可买赛事 (共 {len(formatted_matches)} 场)")
-
-if not formatted_matches:
-    st.warning("🌙 刀妹夜间播报：当前时段比赛已全部停售，请明天上午再来抓取最新鲜的比赛哦！")
-
-for index, match in enumerate(formatted_matches[:15]):
-    st.write(f"**{match['id']} {match['league']}** | 🏠 **{match['home']}** VS **{match['away']}** ✈️")
-    
-    unique_id = f"{match['id']}_{index}"
-    
-    # 画出两个标签页
-    tab1, tab2 = st.tabs(["⚔️ 胜平负", "⚽ 总进球数"])
-    
-    choice_spf = "不选"
-    choice_goal = "不选"
-    
-    with tab1:
-        w_text = f"主胜 ({match['win']})" if match['win'] != 0 else "主胜 (停售)"
-        d_text = f"平局 ({match['draw']})" if match['draw'] != 0 else "平局 (停售)"
-        l_text = f"客胜 ({match['lose']})" if match['lose'] != 0 else "客胜 (停售)"
+        mode = st.radio("选择战术模式:", ["单关拆分执行", f"极限串关 ({unique_matches}串1)"])
+        bet_amount = st.number_input("注入蛛网币 (单笔):", min_value=10, step=10, value=100)
         
-        choice_spf = st.radio("胜平负选项：", ["不选", w_text, d_text, l_text], horizontal=True, key=f"spf_{unique_id}")
-    
-    with tab2:
-        goal_options = ["不选"]
-        for g_label, g_odd in match['goals'].items():
-            if g_odd != 0:
-                goal_options.append(f"{g_label} ({g_odd})")
+        total_odds = 0
+        if "串关" in mode and unique_matches > 1:
+            total_odds = 1.0
+            for item in st.session_state.bet_slip:
+                total_odds *= item['odds']
+            st.success(f"⚡ 综合赔率引爆: @{total_odds:.2f}")
+            st.info(f"💰 预计最高回报: {int(bet_amount * total_odds)} 蛛网币")
+        elif "串关" in mode and unique_matches <= 1:
+            st.warning("⚠️ 串关指令失败：至少需要选择两场独立赛事！")
+        else:
+            st.info(f"单关模式：将执行 {slip_len} 笔独立推演，共需 {bet_amount * slip_len} 蛛网币")
+
+        if st.button("🚀 锁定目标，注入算力", type="primary", use_container_width=True):
+            required_balance = bet_amount * slip_len if "单关" in mode else bet_amount
+            
+            if st.session_state.balance < required_balance:
+                st.error("⚠️ 蛛网币余额枯竭！")
+            elif "串关" in mode and unique_matches <= 1:
+                 st.error("⚠️ 战术配置错误：场次不足。")
             else:
-                goal_options.append(f"{g_label} (停售)")
-        
-        choice_goal = st.selectbox("总进球数选项：", goal_options, key=f"goal_{unique_id}")
+                st.session_state.balance -= required_balance
+                record = {
+                    "时间": datetime.datetime.now().strftime("%H:%M:%S"),
+                    "类型": mode,
+                    "推演内容": " | ".join([f"{i['match_name']}({i['option']})" for i in st.session_state.bet_slip]),
+                    "总投入": required_balance,
+                    "综合赔率": f"@{total_odds:.2f}" if "串关" in mode else "独立计算",
+                    "状态": "⏳ 数据链演算中..."
+                }
+                st.session_state.bet_history.append(record)
+                st.session_state.bet_slip = [] 
+                st.success("指令已成功写入区块链！")
+                st.rerun()
 
-    # 判断用户选了啥，把赔率存进收银台
-    if choice_spf != "不选" and "停售" not in choice_spf:
-        if "主胜" in choice_spf: selected_odds[unique_id] = match['win']
-        elif "平局" in choice_spf: selected_odds[unique_id] = match['draw']
-        elif "客胜" in choice_spf: selected_odds[unique_id] = match['lose']
-    elif choice_goal != "不选" and "停售" not in choice_goal:
-        # 提取括号里的赔率数字，比如 "3球 (3.60)" 提取出 3.60
-        odd_value = float(choice_goal.split("(")[1].split(")")[0])
-        selected_odds[unique_id] = odd_value
-        
-    st.divider()
-
-# ==========================================
-# 🌟 3. 结账区
-# ==========================================
-st.subheader("💰 结账区")
-bet_amount = st.number_input("请输入投注金额 (元):", min_value=2, value=10, step=2)
-match_count = len(selected_odds)
-
-if match_count < 2:
-    st.warning("⚠️ 混合过关至少需要选择 2 场【未停售】的比赛哦！")
+# ================= 4. 底部：推演记录档案 =================
+st.divider()
+st.subheader("📜 核心推演档案库")
+if st.session_state.bet_history:
+    st.dataframe(pd.DataFrame(st.session_state.bet_history[::-1]), use_container_width=True, hide_index=True)
 else:
-    total_odds = 1.0
-    for odd in selected_odds.values():
-        total_odds = total_odds * odd 
-    max_return = total_odds * bet_amount
-    
-    st.success(f"🔥 你的方案：{match_count} 串 1 (支持胜平负与进球数混搭)")
-    col1, col2 = st.columns(2)
-    with col1: st.metric(label="混合总赔率", value=f"{total_odds:.2f}")
-    with col2: st.metric(label="理论最高奖金 (元)", value=f"{max_return:.2f}")
+    st.caption("档案库当前为空。")
