@@ -9,12 +9,10 @@ from datetime import datetime
 st.set_page_config(page_title="蛛网方盒", layout="wide", page_icon="🕸️")
 
 # ==========================================
-# 🔐 零级协议：【重构】多用户数据库初始化
+# 🔐 零级协议：多用户数据库初始化
 # ==========================================
-# 这里是整个系统的“核心数据库”，记录所有人的账号、密码、余额、订单和战绩
 if 'user_db' not in st.session_state:
     st.session_state.user_db = {
-        # 默认内置最高权限管理员
         "养虎人": {
             "pwd": "888888", 
             "balance": 10000.0, 
@@ -40,12 +38,10 @@ if not st.session_state.logged_in:
         st.divider()
         tab_login, tab_reg = st.tabs(["🔐 密钥接入", "🆔 申请最高权限"])
         
-        # 登录逻辑
         with tab_login:
             login_user = st.text_input("特工代号", key="login_user")
             login_pwd = st.text_input("安全密钥", type="password", key="login_pwd")
             if st.button("⚡ 破解协议并登入", use_container_width=True):
-                # 校验账号是否存在 且 密码是否正确
                 if login_user in st.session_state.user_db and st.session_state.user_db[login_user]["pwd"] == login_pwd:
                     st.session_state.logged_in = True
                     st.session_state.current_user = login_user
@@ -53,7 +49,6 @@ if not st.session_state.logged_in:
                 else:
                     st.error("🚨 警告：代号或密钥不匹配，已记录入侵者 IP！")
         
-        # 注册逻辑（带唯一性和余额分配机制）
         with tab_reg:
             reg_user = st.text_input("设定新代号", key="reg_user")
             reg_pwd = st.text_input("设定新密钥", type="password", key="reg_pwd")
@@ -61,10 +56,7 @@ if not st.session_state.logged_in:
                 if reg_user in st.session_state.user_db:
                     st.warning("🚨 数据库拦截：此特工代号已被注册！每人仅限注册一次。")
                 elif reg_user and reg_pwd:
-                    # 分配初始资金（防作弊：即使有人尝试注册名叫"养虎人"，前面也会被拦截，所以这里安全）
                     init_balance = 1000.0  # 普通人只有 1000
-                    
-                    # 为新用户在数据库中开辟独立空间
                     st.session_state.user_db[reg_user] = {
                         "pwd": reg_pwd,
                         "balance": init_balance,
@@ -76,13 +68,11 @@ if not st.session_state.logged_in:
                     st.warning("⚠️ 代号和密钥参数不能为空。")
     st.stop() 
 
-# ---------------------------------------------------------
-# 获取当前登录用户的专属数据指针（方便后续代码调用）
+# 获取当前登录用户的专属数据指针
 user_data = st.session_state.user_db[st.session_state.current_user]
-# ---------------------------------------------------------
 
 # ==========================================
-# 🕷️ 升级版：蛛网汉化超级字典
+# 🕷️ 升级版：纯净汉化超级字典
 # ==========================================
 LEAGUE_DICT = {
     "Premier League": "英超", "Championship": "英冠", "League One": "英甲", "League Two": "英乙",
@@ -116,11 +106,12 @@ TEAM_DICT = {
     "Barrow": "巴罗", "Wimbledon": "温布尔登", "Harrogate Town": "哈罗盖特", "Salford City": "萨尔福德"
 }
 
+# 纯净版翻译：字典里有就全中文，没有就静默显示原名，不加任何标签
 def translate_name(eng_name, dict_type):
     if dict_type == "team":
-        return TEAM_DICT.get(eng_name, f"[需翻译]{eng_name}")
+        return TEAM_DICT.get(eng_name, eng_name)
     elif dict_type == "league":
-        return LEAGUE_DICT.get(eng_name, f"[需翻译]{eng_name}")
+        return LEAGUE_DICT.get(eng_name, eng_name)
 
 # ==========================================
 # 1. 推演池购物车逻辑
@@ -138,12 +129,11 @@ with st.sidebar:
     st.success(f"🕵️ 欢迎回归, 特工 {st.session_state.current_user}")
     if st.button("🚪 断开连接 (销毁会话)", use_container_width=True):
         st.session_state.logged_in = False
-        st.session_state.cart = [] # 清空购物车，防止下一个人看到
+        st.session_state.cart = [] 
         st.rerun()
         
     st.divider()
     st.header("🛒 战术推演池")
-    # 动态显示当前用户的专属余额
     st.metric(label="💼 算力余额 (蛛网币)", value=f"{user_data['balance']:.2f}")
     st.divider()
     
@@ -161,7 +151,6 @@ with st.sidebar:
         st.markdown("**⚡ 执行协议:**")
         mode = st.radio("选择策略", ["单关拆分", "极限串关", "混合容错矩阵"], label_visibility="collapsed")
         
-        # 投注金额限制基于当前用户的余额
         max_stake = int(max(10, user_data['balance']))
         stake = st.number_input("注入蛛网币 (单注):", min_value=10, max_value=max_stake, value=min(100, max_stake), step=10)
         
@@ -186,7 +175,6 @@ with st.sidebar:
         
         if st.button("🚀 锁定目标，注入算力", use_container_width=True):
             if user_data['balance'] >= total_stake:
-                # 扣除当前用户的余额
                 user_data['balance'] -= total_stake
                 
                 order_id = "WEB-" + datetime.now().strftime("%Y%m%d%H%M%S")
@@ -197,10 +185,8 @@ with st.sidebar:
                     "stake": total_stake, "potential_return": potential_return,
                     "items": list(st.session_state.cart), "status": "🟡 等待赛果"
                 }
-                # 订单插入当前用户的专属历史记录中
                 user_data['orders'].insert(0, new_order) 
                 
-                # 累加当前用户的统计数据
                 user_data['stats']["total_bets"] += 1
                 user_data['stats']["total_staked"] += total_stake
                 
@@ -371,7 +357,6 @@ with tab_profile:
     st.markdown(f"### 📈 {st.session_state.current_user} 的个人数据大盘 (ROI)")
     
     c1, c2, c3, c4 = st.columns(4)
-    # 所有数据全部读取当前用户的 user_data
     c1.metric("💼 当前算力余额", f"{user_data['balance']:.2f} 币")
     c2.metric("🔥 累计消耗算力", f"{user_data['stats']['total_staked']:.2f} 币")
     c3.metric("💰 累计回收算力", f"{user_data['stats']['total_returned']:.2f} 币")
@@ -408,7 +393,6 @@ with tab_profile:
                     st.info("⚠️ 模拟推演系统：在此手动判决赛果以更新你的 ROI 数据。")
                     col_win, col_lose = st.columns(2)
                     if col_win.button("✅ 目标达成 (算力回收)", key=f"win_{order['id']}", use_container_width=True):
-                        # 修改的是当前用户的订单状态和余额
                         user_data['orders'][idx]['status'] = "🟢 成功打出"
                         user_data['balance'] += order['potential_return'] 
                         user_data['stats']['won_bets'] += 1
