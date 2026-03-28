@@ -5,10 +5,11 @@ import os
 import pandas as pd
 
 # ==========================================
-# 💾 双核心数据库引擎 (用户库 + 赛果库)
+# 💾 三核心数据库引擎
 # ==========================================
 DB_FILE = "spider_users.json"
 RES_FILE = "spider_results.json"
+MATCH_FILE = "spider_matches.json" 
 
 def load_data():
     if os.path.exists(DB_FILE):
@@ -16,7 +17,6 @@ def load_data():
             with open(DB_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except: pass
-    # 🌟 初始化时加入 last_sign_in 字段
     return {"养虎人": {"pwd": "888", "balance": 999999.0, "orders": [], "redeemed": [], "last_sign_in": ""}}
 
 def save_data(data):
@@ -35,31 +35,40 @@ def save_results(data):
     with open(RES_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# ==========================================
-# 🛠️ 掌柜每日控制台 (开售赛事区)
-# ==========================================
-TODAYS_MATCHES = [
-    {
-        "id": "M001", "league": "英超", "home": "阿森纳", "away": "曼城", "time": "23:30",
-        "odds_1x2": {"主胜": 2.55, "平局": 3.20, "客胜": 2.38},
-        "odds_goals": {"0球": 9.50, "1球": 4.20, "2球": 3.10, "3球": 3.50, "4球": 5.00, "5+球": 7.00},
-        "odds_score": {"1:0": 8.0, "2:0": 11.5, "1:1": 6.5, "0:1": 7.5, "0:0": 10.0, "其他": 13.0},
-        "odds_htft": {"胜胜": 4.10, "平胜": 5.50, "平平": 4.80, "平负": 5.00, "负负": 3.80} 
-    },
-    {
-        "id": "M002", "league": "西甲", "home": "皇马", "away": "巴萨", "time": "03:00",
-        "odds_1x2": {"主胜": 2.15, "平局": 3.40, "客胜": 2.80},
-        "odds_goals": {"2球": 4.10, "3球": 3.80, "4球": 4.50, "5球": 7.00},
-        "odds_score": {"2:1": 7.5, "1:1": 6.0, "1:2": 8.5, "2:2": 11.0, "其他": 9.0},
-        "odds_htft": {"胜胜": 3.20, "平平": 5.10, "负负": 4.50}
-    }
-]
+def load_matches():
+    if os.path.exists(MATCH_FILE):
+        try:
+            with open(MATCH_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: pass
+    return []
+
+def save_matches(data):
+    with open(MATCH_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 REWARDS = [
     {"name": "🥤 到店凭券出票送红牛", "cost": 500},
     {"name": "🎟️ 出票满50减5代金券", "cost": 1000},
     {"name": "👑 进【一线蛛网】核心群", "cost": 3000},
 ]
+
+# 🌟 新增：Excel复杂赔率智能解析引擎
+def parse_odds_str(odds_str, default_dict):
+    if pd.isna(odds_str) or not str(odds_str).strip():
+        return default_dict
+    try:
+        res = {}
+        # 兼容中文逗号和全角等号，防呆设计
+        clean_str = str(odds_str).replace('，', ',').replace('＝', '=').replace('：', ':')
+        items = clean_str.split(',')
+        for item in items:
+            if '=' in item:
+                k, v = item.split('=')
+                res[k.strip()] = float(v.strip())
+        return res if res else default_dict
+    except:
+        return default_dict
 
 # ==========================================
 # 🔐 基础架构与内存加载
@@ -68,6 +77,7 @@ st.set_page_config(page_title="蛛网方盒", layout="centered", page_icon="🕸
 
 if 'user_db' not in st.session_state: st.session_state.user_db = load_data()
 if 'sys_results' not in st.session_state: st.session_state.sys_results = load_results()
+if 'sys_matches' not in st.session_state: st.session_state.sys_matches = load_matches() 
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'current_user' not in st.session_state: st.session_state.current_user = ""
 if 'cart' not in st.session_state: st.session_state.cart = {} 
@@ -92,7 +102,6 @@ if not st.session_state.logged_in:
             if ru in st.session_state.user_db: 
                 st.warning("🚨 该代号已被注册，请换一个名字！")
             elif ru and rp:
-                # 🌟 新用户注册，初始化 last_sign_in 为空
                 st.session_state.user_db[ru] = {"pwd": rp, "balance": 50.0, "orders": [], "redeemed": [], "last_sign_in": ""}
                 save_data(st.session_state.user_db)
                 st.success("✅ 注册成功！系统已赠送 50 枚蛛网币。请切换到登录。")
@@ -125,9 +134,12 @@ def render_btn(m_id, m_name, p_type, opt_name, odd):
 
 with tab_play:
     st.info("💡 提示：点击选项高亮，选好后去【🛒 购物车】结算。")
-    for match in TODAYS_MATCHES:
+    if not st.session_state.sys_matches:
+        st.warning("📭 今日暂无开售赛事，请店长在后台上传盘口数据。")
+        
+    for match in st.session_state.sys_matches:
         m_name = f"{match['home']} vs {match['away']}"
-        st.markdown(f"**⚽ {m_name}** `[{match['league']}]`")
+        st.markdown(f"**⚽ {m_name}** `[{match['league']}]` ⏱️ {match['time']}")
         
         st.caption("胜平负")
         c1, c2, c3 = st.columns(3)
@@ -141,7 +153,7 @@ with tab_play:
             for i in range(3):
                 if row + i < len(g_items):
                     opt, odd = g_items[row + i]
-                    with cols[i]: render_btn(match['id'], m_name, "进球", opt, odd)
+                    with cols[i]: render_btn(match['id'], m_name, "总进球", opt, odd)
 
         st.caption("半全场") 
         h_items = list(match['odds_htft'].items())
@@ -188,7 +200,7 @@ with tab_cart:
         max_bet_allowed = int(user_data['balance'])
         
         if max_bet_allowed < 2:
-            st.error("🚨 你的积分不足 2 币，已无法下注！请点击【👤 我的】进行每日签到或联系店长。")
+            st.error("🚨 你的积分不足 2 币！请签到或联系店长充值。")
             can_bet = False
             stake = 0
         else:
@@ -279,9 +291,6 @@ with tab_rewards:
 # --- 👤 个人中心 & 👑 店长超级后台 ---
 with tab_profile:
     
-    # ==========================================
-    # 🌟 每日签到系统 (强制使用北京/台北时间 UTC+8)
-    # ==========================================
     st.markdown("### 📅 每日军需补给")
     today_str = (datetime.utcnow() + timedelta(hours=8)).strftime("%Y-%m-%d")
     last_sign_in = user_data.get("last_sign_in", "")
@@ -331,11 +340,6 @@ with tab_profile:
             
             if order['status'] == "🟡 待开奖":
                 st.info("🕒 比赛结束后，系统将自动对奖结算")
-                    
-    st.markdown("### 🎒 我的背包 (兑换记录)")
-    if not user_data['redeemed']: st.write("空空如也~")
-    for item in user_data['redeemed']:
-        st.success(f"🎟️ {item['item']}\n(时间: {item['time']})")
 
     # ==========================================
     # 👑 专属：店长超级后台
@@ -344,41 +348,77 @@ with tab_profile:
         st.markdown("---")
         st.markdown("<h3 style='color:#ff4b4b;'>👑 店长超级后台</h3>", unsafe_allow_html=True)
         
-        st.markdown("#### 🎛️ 第一步：录入完场比赛赛果")
+        st.markdown("#### 📁 第一步：一键导入今日赛事盘口 (Excel)")
+        st.info("💡 提示：表头必须是11列：ID、联赛、主队、客队、开赛时间、主胜、平局、客胜、总进球、半全场、比分。")
+        uploaded_file = st.file_uploader("拖拽或选择你的 Excel 盘口表", type=["xlsx"])
         
-        match_dict = {f"{m['home']} vs {m['away']}": m for m in TODAYS_MATCHES}
-        sel_m_name = st.selectbox("选择已结束的比赛:", list(match_dict.keys()))
-        target_m = match_dict[sel_m_name]
-        m_id = target_m['id']
+        if uploaded_file is not None:
+            try:
+                df = pd.read_excel(uploaded_file)
+                new_matches = []
+                
+                # 保底的默认赔率库（万一Excel没填那一列，自动拿这个顶上防崩溃）
+                default_goals = {"0球": 9.5, "1球": 4.2, "2球": 3.1, "3球": 3.5, "4球": 5.0, "5+球": 7.0}
+                default_score = {"1:0": 8.0, "2:0": 11.5, "1:1": 6.5, "0:1": 7.5, "0:0": 10.0, "其他": 13.0}
+                default_htft = {"胜胜": 4.1, "平胜": 5.5, "平平": 4.8, "平负": 5.0, "负负": 3.8}
+                
+                for index, row in df.iterrows():
+                    match_data = {
+                        "id": str(row['ID']), "league": str(row['联赛']),
+                        "home": str(row['主队']), "away": str(row['客队']), "time": str(row['开赛时间']),
+                        "odds_1x2": {
+                            "主胜": float(row['主胜']), "平局": float(row['平局']), "客胜": float(row['客胜'])
+                        },
+                        # 🌟 调用智能解析引擎，将Excel里的 "1:0=8.0, 2:0=11.5" 解析成系统能用的格式
+                        "odds_goals": parse_odds_str(row.get('总进球'), default_goals),
+                        "odds_score": parse_odds_str(row.get('比分'), default_score),
+                        "odds_htft": parse_odds_str(row.get('半全场'), default_htft)
+                    }
+                    new_matches.append(match_data)
+                    
+                if st.button("⚡ 确认清洗大厅并换上新盘口", type="primary", use_container_width=True):
+                    save_matches(new_matches)
+                    st.session_state.sys_matches = new_matches
+                    st.success(f"✅ 成功导入 {len(new_matches)} 场焦点战！大厅已同步！")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"🚨 导入失败！请检查 Excel 表头是否有错别字或漏填。详情: {e}")
+
+        st.markdown("#### 🎛️ 第二步：录入完场比赛赛果")
         
-        c1, c2 = st.columns(2)
-        r_1x2 = c1.selectbox("真实赛果 - 胜平负", list(target_m["odds_1x2"].keys()))
-        r_goals = c2.selectbox("真实赛果 - 总进球", list(target_m["odds_goals"].keys()))
-        r_score = c1.selectbox("真实赛果 - 比分", list(target_m["odds_score"].keys()))
-        r_htft = c2.selectbox("真实赛果 - 半全场", list(target_m["odds_htft"].keys()))
-        
-        if st.button(f"💾 确认保存【{sel_m_name}】的赛果", type="primary", use_container_width=True):
-            st.session_state.sys_results[m_id] = {
-                "胜平负": r_1x2, "总进球": r_goals, "比分": r_score, "半全场": r_htft 
-            }
-            save_results(st.session_state.sys_results)
-            st.success(f"✅ 赛果保存成功！现在你可以点击下方的【一键对奖】了。")
+        match_dict = {f"{m['home']} vs {m['away']}": m for m in st.session_state.sys_matches}
+        if match_dict:
+            sel_m_name = st.selectbox("选择已结束的比赛:", list(match_dict.keys()))
+            target_m = match_dict[sel_m_name]
+            m_id = target_m['id']
             
-        st.markdown("#### ⚡ 第二步：智能核对与派奖")
+            c1, c2 = st.columns(2)
+            r_1x2 = c1.selectbox("真实赛果 - 胜平负", list(target_m["odds_1x2"].keys()))
+            r_goals = c2.selectbox("真实赛果 - 总进球", list(target_m["odds_goals"].keys()))
+            r_score = c1.selectbox("真实赛果 - 比分", list(target_m["odds_score"].keys()))
+            r_htft = c2.selectbox("真实赛果 - 半全场", list(target_m["odds_htft"].keys()))
+            
+            if st.button(f"💾 确认保存【{sel_m_name}】的赛果", type="primary", use_container_width=True):
+                st.session_state.sys_results[m_id] = {
+                    "胜平负": r_1x2, "总进球": r_goals, "比分": r_score, "半全场": r_htft 
+                }
+                save_results(st.session_state.sys_results)
+                st.success(f"✅ 赛果保存成功！现在你可以点击下方的【一键对奖】了。")
+        else:
+            st.warning("⚠️ 今天的大厅是空的，请先上传 Excel 表格。")
+            
+        st.markdown("#### ⚡ 第三步：智能核对与派奖")
         if st.button("🚀 一键核对全站待开奖订单", type="primary", use_container_width=True):
             settled_count = 0
-            
             for u_name, u_info in st.session_state.user_db.items():
                 for idx, order in enumerate(u_info['orders']):
                     if order['status'] == "🟡 待开奖" and 'raw_items' in order:
                         is_lost = False
                         all_won = True
-                        
                         for item in order['raw_items']:
                             check_m_id = item['match_id']
                             play = item['play']
                             choice = item['choice']
-                            
                             if check_m_id in st.session_state.sys_results:
                                 actual_result = st.session_state.sys_results[check_m_id].get(play)
                                 if choice != actual_result:
@@ -386,7 +426,6 @@ with tab_profile:
                                     break
                             else:
                                 all_won = False
-                                
                         if is_lost:
                             u_info['orders'][idx]['status'] = "🔴 未命中"
                             settled_count += 1
@@ -394,15 +433,21 @@ with tab_profile:
                             u_info['orders'][idx]['status'] = "🟢 已中奖" 
                             u_info['balance'] += order['return'] 
                             settled_count += 1
-                            
             save_data(st.session_state.user_db)
-            if settled_count > 0:
-                st.success(f"✅ 派奖完成！共清算了 {settled_count} 笔订单。")
-            else:
-                st.warning("⚠️ 没有发生状态变动的订单。")
+            if settled_count > 0: st.success(f"✅ 派奖完成！共清算了 {settled_count} 笔订单。")
+            else: st.warning("⚠️ 没有发生状态变动的订单。")
         
         st.divider()
-        st.markdown("#### 👥 客户数据总览")
+        st.markdown("#### 👥 客户数据总览 & 💰 手工上下分")
+        c_user = st.text_input("输入客户代号：")
+        c_amount = st.number_input("调整积分 (正数加，负数扣)：", value=0, step=10)
+        if st.button("⚡ 确认执行", type="primary"):
+            if c_user in st.session_state.user_db:
+                st.session_state.user_db[c_user]['balance'] += c_amount
+                save_data(st.session_state.user_db)
+                st.success(f"✅ 成功！客户【{c_user}】最新积分：{st.session_state.user_db[c_user]['balance']}")
+            else: st.error("🚨 找不到此客户！")
+            
         all_users = []
         for u_name, u_info in st.session_state.user_db.items():
             all_users.append({
@@ -411,14 +456,3 @@ with tab_profile:
                 "待开奖": len([o for o in u_info['orders'] if '待开奖' in o['status']])
             })
         st.dataframe(pd.DataFrame(all_users), use_container_width=True)
-        
-        st.markdown("#### 💰 手工上下分")
-        c_user = st.text_input("输入客户代号：")
-        c_amount = st.number_input("调整积分 (正数加，负数扣)：", value=0, step=10)
-        if st.button("⚡ 确认执行", type="primary"):
-            if c_user in st.session_state.user_db:
-                st.session_state.user_db[c_user]['balance'] += c_amount
-                save_data(st.session_state.user_db)
-                st.success(f"✅ 成功！客户【{c_user}】最新积分：{st.session_state.user_db[c_user]['balance']}")
-            else:
-                st.error("🚨 找不到此客户！")
